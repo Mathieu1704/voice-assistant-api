@@ -1,9 +1,9 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
-from app.utils import transcribe_audio, ask_gpt, synthesize_speech
-import os
 import tempfile
+import os
 import base64
+from app.utils import transcribe_audio, query_assistant, synthesize_speech
 
 app = FastAPI()
 
@@ -15,8 +15,8 @@ async def process_voice(file: UploadFile = File(...)):
 
     user_transcript = transcribe_audio(temp_path)
     print("🎙️ Transcrit :", user_transcript)
-    assistant_reply = ask_gpt(user_transcript)
-    print("🤖 GPT :", assistant_reply)
+    assistant_reply = query_assistant(user_transcript)
+    print("🤖 Assistant :", assistant_reply)
     mp3_path = synthesize_speech(assistant_reply)
 
     os.remove(temp_path)
