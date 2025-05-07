@@ -1,12 +1,11 @@
 import tempfile
-from openai import OpenAI
 import os
+import time
+from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-conversation = [
-    {"role": "system", "content": "Tu es un assistant vocal amical et intelligent."}
-]
+ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")  # 🔐 stocke ton Assistant ID dans Render
 
 def transcribe_audio(audio_path):
     with open(audio_path, "rb") as f:
@@ -16,18 +15,42 @@ def transcribe_audio(audio_path):
         )
     return transcript.text
 
-def ask_gpt(prompt):
-    conversation.append({"role": "user", "content": prompt})
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=conversation
+def query_assistant(user_input: str) -> str:
+    # Crée un thread
+    thread = client.beta.threads.create()
+
+    # Ajoute le message de l'utilisateur au thread
+    client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=user_input,
     )
-    message = response.choices[0].message.content.strip()
-    conversation.append({"role": "assistant", "content": message})
-    return message
+
+    # Lance l'exécution de l'assistant
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=ASSISTANT_ID,
+    )
+
+    # Attend que l'assistant réponde
+    while True:
+        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        if run_status.status == "completed":
+            break
+        elif run_status.status in ["failed", "cancelled"]:
+            return "Erreur : l'assistant n'a pas pu répondre."
+        time.sleep(1)
+
+    # Récupère la réponse la plus récente
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    for message in reversed(messages.data):
+        if message.role == "assistant":
+            return message.content[0].text.value.strip()
+
+    return "Erreur : aucune réponse reçue."
 
 def synthesize_speech(text):
-    input_text = "Hum......... " + text 
+    input_text = "Hum... " + text
     speech = client.audio.speech.create(
         model="tts-1",
         voice="shimmer",
