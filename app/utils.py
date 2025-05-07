@@ -1,13 +1,92 @@
 import tempfile
 import os
 import time
+import requests
 from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")  # 🔐 stocke ton Assistant ID dans Render
+# 🧠 Assistant ID global
+ASSISTANT_ID = None
 
-def transcribe_audio(audio_path):
+# 🔍 Brave API key
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
+
+# 🔧 Fonction externe accessible à GPT (Function Calling)
+search_web_function = {
+    "name": "search_web",
+    "description": "Effectue une recherche web avec Brave Search pour obtenir des informations actuelles.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "La question ou sujet à rechercher."
+            }
+        },
+        "required": ["query"]
+    }
+}
+
+# 🔍 Requête à Brave Search
+def search_web(query: str) -> str:
+    url = "https://api.search.brave.com/res/v1/web/search"
+    headers = {
+        "Accept": "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY
+    }
+    params = {"q": query, "count": 3}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        results = response.json().get("web", {}).get("results", [])
+        if not results:
+            return "Aucun résultat trouvé."
+        return "\n\n".join([f"{r['title']} - {r['url']}\n{r['description']}" for r in results])
+    return "Erreur lors de la recherche web."
+
+# 📌 Assistant simple avec Function Calling
+conversation = [
+    {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent et connecté. Utilise les fonctions externes si nécessaire."}
+]
+
+def ask_gpt(prompt):
+    conversation.append({"role": "user", "content": prompt})
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=conversation,
+        functions=[search_web_function],
+        function_call="auto"
+    )
+
+    message = response.choices[0].message
+
+    if message.function_call:
+        name = message.function_call.name
+        args = eval(message.function_call.arguments)
+
+        if name == "search_web":
+            result = search_web(args["query"])
+            conversation.append({
+                "role": "function",
+                "name": name,
+                "content": result
+            })
+
+            followup = client.chat.completions.create(
+                model="gpt-4o",
+                messages=conversation
+            )
+            answer = followup.choices[0].message.content.strip()
+            conversation.append({"role": "assistant", "content": answer})
+            return answer
+
+    answer = message.content.strip()
+    conversation.append({"role": "assistant", "content": answer})
+    return answer
+
+# 🎤 Transcription audio
+async def transcribe_audio(audio_path):
     with open(audio_path, "rb") as f:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
@@ -15,42 +94,9 @@ def transcribe_audio(audio_path):
         )
     return transcript.text
 
-def query_assistant(user_input: str) -> str:
-    # Crée un thread
-    thread = client.beta.threads.create()
-
-    # Ajoute le message de l'utilisateur au thread
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_input,
-    )
-
-    # Lance l'exécution de l'assistant
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=ASSISTANT_ID,
-    )
-
-    # Attend que l'assistant réponde
-    while True:
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-        if run_status.status == "completed":
-            break
-        elif run_status.status in ["failed", "cancelled"]:
-            return "Erreur : l'assistant n'a pas pu répondre."
-        time.sleep(1)
-
-    # Récupère la réponse la plus récente
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    for message in reversed(messages.data):
-        if message.role == "assistant":
-            return message.content[0].text.value.strip()
-
-    return "Erreur : aucune réponse reçue."
-
-def synthesize_speech(text):
-    input_text = "Hum... " + text
+# 🎧 Synthèse vocale
+async def synthesize_speech(text):
+    input_text = "Hum......... " + text
     speech = client.audio.speech.create(
         model="tts-1",
         voice="shimmer",
