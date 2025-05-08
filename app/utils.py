@@ -70,7 +70,7 @@ async def ask_gpt(prompt):
             conversation.append({
                 "role": "function",
                 "name": name,
-                "content": result
+                "content": f"Voici les résultats web trouvés :\n{result}\n\nMerci de résumer l'information principale trouvée dans un langage naturel, comme si tu parlais à un humain."
             })
 
             followup = await client.chat.completions.create(
