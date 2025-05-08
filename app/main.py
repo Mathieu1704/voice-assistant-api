@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 import tempfile
 import os
 import base64
-from app.utils import transcribe_audio, query_assistant, synthesize_speech
+from app.utils import transcribe_audio, ask_gpt, synthesize_speech
 
 app = FastAPI()
 
@@ -13,11 +13,13 @@ async def process_voice(file: UploadFile = File(...)):
         tmp.write(await file.read())
         temp_path = tmp.name
 
-    user_transcript = transcribe_audio(temp_path)
+    user_transcript = await transcribe_audio(temp_path)
     print("🎙️ Transcrit :", user_transcript)
-    assistant_reply = query_assistant(user_transcript)
+
+    assistant_reply = await ask_gpt(user_transcript)
     print("🤖 Assistant :", assistant_reply)
-    mp3_path = synthesize_speech(assistant_reply)
+
+    mp3_path = await synthesize_speech(assistant_reply)
 
     os.remove(temp_path)
 
