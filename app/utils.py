@@ -2,9 +2,9 @@ import tempfile
 import os
 import time
 import requests
-from openai import OpenAI
+from openai import AsyncOpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # 🧠 Assistant ID global
 ASSISTANT_ID = None
@@ -49,10 +49,10 @@ conversation = [
     {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent et connecté. Utilise les fonctions externes si nécessaire."}
 ]
 
-def ask_gpt(prompt):
+async def ask_gpt(prompt):
     conversation.append({"role": "user", "content": prompt})
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="gpt-4o",
         messages=conversation,
         functions=[search_web_function],
@@ -73,7 +73,7 @@ def ask_gpt(prompt):
                 "content": result
             })
 
-            followup = client.chat.completions.create(
+            followup = await client.chat.completions.create(
                 model="gpt-4o",
                 messages=conversation
             )
@@ -88,7 +88,7 @@ def ask_gpt(prompt):
 # 🎤 Transcription audio
 async def transcribe_audio(audio_path):
     with open(audio_path, "rb") as f:
-        transcript = client.audio.transcriptions.create(
+        transcript = await client.audio.transcriptions.create(
             model="whisper-1",
             file=f
         )
@@ -97,7 +97,7 @@ async def transcribe_audio(audio_path):
 # 🎧 Synthèse vocale
 async def synthesize_speech(text):
     input_text = "Hum......... " + text
-    speech = client.audio.speech.create(
+    speech = await client.audio.speech.create(
         model="tts-1",
         voice="shimmer",
         input=input_text
