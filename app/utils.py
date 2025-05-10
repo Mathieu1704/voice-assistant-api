@@ -42,10 +42,12 @@ def get_weather(city: str) -> str:
     if response.status_code != 200:
         return "Je n'ai pas pu obtenir la météo actuellement."
     data = response.json()
-    desc = data["weather"][0]["description"]
-    temp = data["main"]["temp"]
-    feels_like = data["main"]["feels_like"]
-    return f"À {city}, il fait {temp}°C, ressenti {feels_like}°C, avec un temps {desc}."
+    temperature = round(data["main"]["temp"])
+    feels_like = round(data["main"]["feels_like"])
+    description = data["weather"][0]["description"]
+    return (
+    f"Aujourd'hui, à {city}, le temps est {description} avec une température de {temperature} degrés Celsius, "
+    f"ressentie comme {feels_like} degrés Celsius.")
 
 # 📚 Liste des fonctions accessibles
 search_web_function = {
