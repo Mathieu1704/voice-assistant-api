@@ -6,29 +6,14 @@ from openai import AsyncOpenAI
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 🧠 Assistant ID global
+# 🔐 Clés d’API
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
+# 🧠 Assistant ID global (non utilisé ici mais conservé si besoin)
 ASSISTANT_ID = None
 
-# 🔍 Brave API key
-BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
-
-# 🔧 Fonction externe accessible à GPT (Function Calling)
-search_web_function = {
-    "name": "search_web",
-    "description": "Effectue une recherche web avec Brave Search pour obtenir des informations actuelles.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "La question ou sujet à rechercher."
-            }
-        },
-        "required": ["query"]
-    }
-}
-
-# 🔍 Requête à Brave Search
+# 🔍 Recherche Brave
 def search_web(query: str) -> str:
     url = "https://api.search.brave.com/res/v1/web/search"
     headers = {
@@ -44,18 +29,68 @@ def search_web(query: str) -> str:
         return "\n\n".join([f"{r['title']} - {r['url']}\n{r['description']}" for r in results])
     return "Erreur lors de la recherche web."
 
-# 📌 Assistant simple avec Function Calling
+# 🌦️ Météo OpenWeather
+def get_weather(city: str) -> str:
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "q": city,
+        "appid": OPENWEATHER_API_KEY,
+        "lang": "fr",
+        "units": "metric"
+    }
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        return "Je n'ai pas pu obtenir la météo actuellement."
+    data = response.json()
+    desc = data["weather"][0]["description"]
+    temp = data["main"]["temp"]
+    feels_like = data["main"]["feels_like"]
+    return f"À {city}, il fait {temp}°C, ressenti {feels_like}°C, avec un temps {desc}."
+
+# 📚 Liste des fonctions accessibles
+search_web_function = {
+    "name": "search_web",
+    "description": "Effectue une recherche web avec Brave Search pour obtenir des informations actuelles.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "La question ou sujet à rechercher."
+            }
+        },
+        "required": ["query"]
+    }
+}
+
+weather_function = {
+    "name": "get_weather",
+    "description": "Donne la météo actuelle pour une ville donnée.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "Nom de la ville"
+            }
+        },
+        "required": ["city"]
+    }
+}
+
+# 🧠 Mémoire de conversation
 conversation = [
-    {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent et connecté. Utilise les fonctions externes si nécessaire."}
+    {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent, amical et connecté à Internet. Utilise les fonctions si nécessaire."}
 ]
 
+# 💬 Fonction principale de dialogue
 async def ask_gpt(prompt):
     conversation.append({"role": "user", "content": prompt})
 
     response = await client.chat.completions.create(
         model="gpt-4o",
         messages=conversation,
-        functions=[search_web_function],
+        functions=[search_web_function, weather_function],
         function_call="auto"
     )
 
@@ -70,16 +105,24 @@ async def ask_gpt(prompt):
             conversation.append({
                 "role": "function",
                 "name": name,
-                "content": f"Voici les résultats web trouvés :\n{result}\n\nMerci de résumer l'information principale trouvée dans un langage naturel, comme si tu parlais à un humain."
+                "content": f"Voici les résultats web trouvés :\n{result}\n\nMerci de résumer l'information principale trouvée."
             })
 
-            followup = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=conversation
-            )
-            answer = followup.choices[0].message.content.strip()
-            conversation.append({"role": "assistant", "content": answer})
-            return answer
+        elif name == "get_weather":
+            result = get_weather(args["city"])
+            conversation.append({
+                "role": "function",
+                "name": name,
+                "content": result
+            })
+
+        followup = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=conversation
+        )
+        answer = followup.choices[0].message.content.strip()
+        conversation.append({"role": "assistant", "content": answer})
+        return answer
 
     answer = message.content.strip()
     conversation.append({"role": "assistant", "content": answer})
@@ -94,7 +137,7 @@ async def transcribe_audio(audio_path):
         )
     return transcript.text
 
-# 🎧 Synthèse vocale
+# 🔊 Synthèse vocale
 async def synthesize_speech(text):
     input_text = "Hum......... " + text
     speech = await client.audio.speech.create(
